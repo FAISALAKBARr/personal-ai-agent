@@ -1,0 +1,16 @@
+{
+  "name": "baileys-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTTP bridge between the FastAPI backend and WhatsApp via Baileys (Phase 1b)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "express": "^5.2.1",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

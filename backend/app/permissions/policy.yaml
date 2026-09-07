@@ -1,0 +1,14 @@
+# Capability Firewall policy for Phase 1.
+#
+# This file is loaded and checked in code — the LLM never sees it and
+# cannot influence it via anything it outputs. Any tool not listed here
+# falls back to `default`, which must stay BLOCKED (fail closed).
+
+default: BLOCKED
+
+tools:
+  get_tasks: SAFE
+  create_task: SAFE
+  update_task: SAFE
+  create_reminder: SAFE
+  delete_task: CONFIRM # placeholder tool — proves the CONFIRM path end to end

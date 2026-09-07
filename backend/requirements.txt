@@ -1,0 +1,20 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+redis==5.2.1
+apscheduler==3.10.4
+httpx==0.28.1
+pyyaml==6.0.2
+python-dotenv==1.0.1
+ollama==0.6.2
+anthropic==0.42.0
+pytest==8.3.4
+pytest-asyncio==0.25.0
+
+# Package versions above were current around early 2026 — safe to bump with
+# `pip list --outdated` after first install, nothing here is version-pinned
+# for a specific reason.
