@@ -1,4 +1,5 @@
 import json
+import time
 from abc import ABC, abstractmethod
 
 import httpx
@@ -35,8 +36,7 @@ class OllamaProvider(AIProvider):
                     "stream": False,
                     # Reasoning models (qwen3, deepseek-r1, etc.) think out loud
                     # before answering by default — fine for chat, bad for a
-                    # latency-sensitive tool-call path. This is most of why the
-                    # first end-to-end test took 61s.
+                    # latency-sensitive tool-call path.
                     "think": False,
                 },
             )
@@ -46,11 +46,19 @@ class OllamaProvider(AIProvider):
 
 
 class OpenRouterProvider(AIProvider):
-    """OpenAI-compatible. Default model 'openrouter/free' auto-picks a free
-    model that supports structured outputs + tool calling — verified current
-    as of Sept 2026, not just carried over from the other conversation's
-    advice. Rate limits: 20 req/min, 50/day unfunded (1,000/day after any
-    $10+ credit purchase, permanently)."""
+    """OpenAI-compatible OpenRouter provider.
+
+    Uses OpenRouter's free-model router ('openrouter/free') by default, which
+    picks a currently-available free model filtered for structured-output
+    support. Note: the agent does NOT rely on native model tool-calling —
+    the model only ever returns structured JSON here; the orchestrator
+    (app/agents/orchestrator.py) is what decides whether and how to run a
+    tool via TOOL_REGISTRY. The provider has no authority to execute anything.
+
+    Rate limits as of Sept 2026: 20 req/min, 50/day unfunded (1,000/day after
+    any $10+ credit purchase — never a hard requirement of this system,
+    the $0 path through Gemini/Ollama must keep working regardless).
+    """
 
     def __init__(self, api_key: str, model: str = "openrouter/free"):
         self.api_key = api_key
@@ -76,10 +84,9 @@ class OpenRouterProvider(AIProvider):
 
 
 class GeminiProvider(AIProvider):
-    """Google Gemini, classic generateContent REST endpoint (still fully
-    supported as of mid-2026 alongside the newer Interactions API — this one
-    is simpler and enough for our needs). Free tier via Google AI Studio,
-    no billing required. Default model verified current as of Sept 2026."""
+    """Google Gemini, classic generateContent REST endpoint. Free tier via
+    Google AI Studio, no billing required. Same non-authority note as
+    OpenRouter above applies — this only returns JSON, never executes."""
 
     def __init__(self, api_key: str, model: str = "gemini-3.7-flash"):
         self.api_key = api_key
@@ -123,25 +130,56 @@ class ClaudeProvider(AIProvider):
 
 
 class FallbackProvider(AIProvider):
-    """Tries each provider in order, moving to the next on ANY failure
-    (rate limit, network error, timeout, bad JSON, whatever). This is what
-    actually makes a free-first setup reliable rather than just cheap —
-    a 50-requests/day cap WILL get hit, and when it does, the agent should
-    degrade to the next option instead of just failing."""
+    """
+    Tries each provider in order, but only advances to the next on failures
+    that are actually about THAT provider being temporarily unavailable —
+    rate limited (429), down (5xx), a network/timeout hiccup, or it broke
+    the JSON contract. Config/auth errors (400/401/403) are NOT treated as
+    fallback triggers: silently routing around a bad API key would hide a
+    real misconfiguration instead of surfacing it, and letting the next
+    provider quietly cover for a bug is worse than a clear failure.
+    """
+
+    TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 
     def __init__(self, providers: list[AIProvider]):
         if not providers:
             raise ValueError("FallbackProvider needs at least one provider")
         self.providers = providers
 
+    @classmethod
+    def _is_transient(cls, error: Exception) -> bool:
+        if isinstance(error, httpx.HTTPStatusError):
+            return error.response.status_code in cls.TRANSIENT_STATUS_CODES
+        if isinstance(error, (httpx.TimeoutException, httpx.NetworkError)):
+            return True
+        if isinstance(error, json.JSONDecodeError):
+            return True  # provider broke the "must return valid JSON" contract
+        return False
+
     async def complete_json(self, system_prompt: str, user_message: str) -> dict:
         last_error: Exception | None = None
         for provider in self.providers:
+            name = type(provider).__name__
+            started = time.monotonic()
             try:
-                return await provider.complete_json(system_prompt, user_message)
-            except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
-                print(f"[FallbackProvider] {type(provider).__name__} failed ({e!r}), trying next...")
-                last_error = e
+                result = await provider.complete_json(system_prompt, user_message)
+                print(f"provider={name} latency={time.monotonic() - started:.2f}s status=success")
+                return result
+            except Exception as error:
+                latency = time.monotonic() - started
+                last_error = error
+                if self._is_transient(error):
+                    print(
+                        f"provider={name} latency={latency:.2f}s status=transient_failure "
+                        f"error={error!r} action=fallback_to_next"
+                    )
+                    continue
+                print(
+                    f"provider={name} latency={latency:.2f}s status=permanent_failure "
+                    f"error={error!r} action=raise_immediately"
+                )
+                raise
         raise last_error
 
 
