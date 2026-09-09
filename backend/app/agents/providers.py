@@ -205,4 +205,8 @@ def get_provider(settings: Settings) -> AIProvider:
 
     chain.append(OllamaProvider(settings.ollama_host, settings.ollama_model))
 
-    return chain[0] if len(chain) == 1 else FallbackProvider(chain)
+    # Always wrapped, even for a single provider — functionally identical
+    # (nothing to fall back to if it fails), but keeps the latency/outcome
+    # logging in FallbackProvider consistently present regardless of how
+    # many providers happen to be configured.
+    return FallbackProvider(chain)

@@ -30,9 +30,9 @@ This starts Postgres, Redis, and the FastAPI backend (the Baileys bridge builds 
 ## 3. Pull the model
 Ollama runs natively on your machine for this setup, not inside Docker (see the comment in `docker-compose.yml` for why — short version: GPU passthrough into a container is unnecessary extra setup on Windows when the native install already has GPU access). Pull the model the same way you already installed Ollama — a regular PowerShell:
 ```powershell
-ollama pull qwen3:4b
+ollama pull phi4-mini
 ```
-`qwen3:4b` is the default — sized for 4GB-class VRAM (e.g. GTX 1650). `phi4-mini` is a strong alternative worth trying too (also ~2.5GB, tool-calling-tagged on Ollama). If your GPU has more headroom, `qwen3:8b`/`qwen3:14b` reason noticeably better. Whichever you land on, set `OLLAMA_MODEL` in `.env` to match, then `docker compose restart backend` since the backend reads it once at startup.
+`phi4-mini` is the default. It's Ollama's role in this chain (OpenRouter -> Gemini -> Claude -> Ollama, see `agents/providers.py`) that drives this choice: Ollama only ever gets used as the last resort when every cloud option has failed, so predictability matters more than raw speed there. `phi4-mini` has no "thinking" mode to misbehave (unlike `qwen3`, which caused a real 61s timeout in testing before `think: false` was added) and carries a 131K context window — `qwen3:4b` is still a fine general-purpose alternative if you want to compare, just pull it and change `OLLAMA_MODEL` in `.env` to match, then `docker compose restart backend`.
 
 ## 4. Check it's alive
 ```bash

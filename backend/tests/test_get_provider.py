@@ -15,10 +15,11 @@ def _chain_types(provider):
     return [type(provider).__name__]
 
 
-def test_no_cloud_keys_returns_bare_ollama_provider():
+def test_no_cloud_keys_still_wraps_bare_ollama_for_consistent_logging():
     settings = Settings(openrouter_api_key=None, gemini_api_key=None, anthropic_api_key=None)
     provider = get_provider(settings)
-    assert isinstance(provider, OllamaProvider)
+    assert isinstance(provider, FallbackProvider)
+    assert _chain_types(provider) == ["OllamaProvider"]
 
 
 def test_single_cloud_key_wraps_with_ollama_fallback():

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.7-flash"
 
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen3:4b"
+    ollama_model: str = "phi4-mini"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
 
