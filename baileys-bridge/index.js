@@ -74,25 +74,42 @@ async function startConnection() {
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       console.log(
         "Connection closed.",
-        loggedOut ? "Logged out — delete auth_info/ and restart to re-pair." : "Reconnecting..."
+        loggedOut ? "Logged out — delete auth_info/ and restart to re-pair." : "Reconnecting in 5s..."
       );
-      if (!loggedOut) startConnection();
+      if (!loggedOut) setTimeout(startConnection, 5000);
     } else if (connection === "open") {
       console.log("Connected to WhatsApp.");
     }
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
+    console.log(`[debug] messages.upsert fired: type=${type} count=${messages?.length ?? 0}`);
     for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+      console.log(`[debug] key=${JSON.stringify(msg.key)}`);
+
+      if (!msg.message || msg.key.fromMe) {
+        console.log("[debug] SKIP: no message content, or fromMe");
+        continue;
+      }
+
+      // Phase 1 is private-chat only. Group JIDs end in @g.us, broadcast
+      // lists differently again — none of those are "the user talking to
+      // their own agent", so don't treat them as commands.
+      if (!msg.key.remoteJid.endsWith("@s.whatsapp.net")) {
+        console.log(`[debug] SKIP: not a private chat, remoteJid=${msg.key.remoteJid}`);
+        continue;
+      }
 
       // Phase 1b: plain text only. Media/voice notes are future work
       // (the InboundMessage schema on the Python side already has a `media`
       // field ready for when that gets built).
       const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-      if (!text) continue;
+      if (!text) {
+        console.log(`[debug] SKIP: no plain text extracted, message=${JSON.stringify(msg.message)}`);
+        continue;
+      }
 
+      console.log(`[debug] forwarding: from=${fromJid(msg.key.remoteJid)} text=${JSON.stringify(text)}`);
       await forwardToBackend({
         type: "message",
         from: fromJid(msg.key.remoteJid),
@@ -115,7 +132,20 @@ app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ status: "ok", connected: !!sock?.user }));
 
-app.post("/send", async (req, res) => {
+// Same secret as the inbound HMAC signing — only the backend should ever
+// call this. Previously unauthenticated: anything able to reach this port
+// could make the bridge send WhatsApp messages as the user with no checks
+// at all. Combined with removing the host port publish in docker-compose.yml,
+// this is defense in depth, not either/or.
+function requireBridgeSecret(req, res, next) {
+  const provided = req.headers["x-bridge-secret"];
+  if (!provided || provided !== WEBHOOK_SECRET) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  next();
+}
+
+app.post("/send", requireBridgeSecret, async (req, res) => {
   const { to, text } = req.body || {};
   if (!to || !text) return res.status(400).json({ error: "to and text are required" });
   if (!sock?.user) return res.status(503).json({ error: "not connected to WhatsApp yet" });

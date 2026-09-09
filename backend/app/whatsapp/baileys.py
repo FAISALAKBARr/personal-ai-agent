@@ -28,7 +28,11 @@ class BaileysGateway(WhatsAppGateway):
 
     async def send_message(self, to: str, text: str) -> None:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{self.bridge_url}/send", json={"to": to, "text": text})
+            resp = await client.post(
+                f"{self.bridge_url}/send",
+                json={"to": to, "text": text},
+                headers={"X-Bridge-Secret": self.webhook_secret},
+            )
             resp.raise_for_status()
 
     def parse_webhook(self, payload: dict) -> InboundMessage | None:

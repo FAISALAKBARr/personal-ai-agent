@@ -78,14 +78,27 @@ WhatsApp account. Uses your real number — read the ban-risk note in
 `docs/architecture-phase1.md` §8 first, and consider a spare number rather
 than your daily driver if you're unsure.
 
+**First, replace the placeholder secret.** `WHATSAPP_WEBHOOK_SECRET=changeme`
+is fine for local mock-only testing but not once a real bridge exists —
+generate a real one and put it in `.env`:
+```powershell
+[guid]::NewGuid().ToString()
+```
+(any random string works; a GUID is just a convenient way to get one). This
+same value is read by both `backend` and `baileys-bridge` from `.env`, so
+setting it once is enough.
+
 ```bash
-docker compose up -d --build baileys-bridge
+docker compose up -d --build
 docker compose logs -f baileys-bridge
 ```
 A QR code prints in the log. On your phone: WhatsApp > Settings > Linked
-Devices > Link a Device, then scan it. The log should print "Connected to
-WhatsApp." Session credentials persist in the `baileys_auth` volume, so you
-only need to do this once — it survives restarts.
+Devices > Link a Device, then scan it — quickly, WhatsApp's QR codes expire
+in well under a minute, so if you see "Connection closed. Reconnecting..."
+followed by a fresh QR, that's normal, just scan the new one. The log should
+print "Connected to WhatsApp." Session credentials persist in the
+`baileys_auth` volume, so you only need to do this once — it survives
+restarts.
 
 Now switch the backend over:
 ```bash
@@ -93,7 +106,16 @@ Now switch the backend over:
 docker compose restart backend
 ```
 Message your bot's number for real. Same rules apply as the curl tests above
-— only numbers in `WHATSAPP_ALLOWED_NUMBERS` get a response.
+— only numbers in `WHATSAPP_ALLOWED_NUMBERS` get a response, and only
+private chats are processed (group messages are ignored on purpose).
+
+The bridge has no host-published port — it's only reachable from `backend`
+over Docker's internal network, and `/send` requires the shared secret above
+even so (defense in depth). To check its status without a host port, use the
+logs, or from inside the container:
+```bash
+docker compose exec baileys-bridge node -e "require('http').get('http://localhost:3000/health', r => { let d = ''; r.on('data', c => d += c); r.on('end', () => console.log(d)); })"
+```
 
 Currently handles plain text only (no images/voice/documents yet — that's
 future work, the message schema already has a `media` field waiting for it).

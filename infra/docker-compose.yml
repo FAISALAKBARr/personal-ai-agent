@@ -62,6 +62,12 @@ services:
 
   # Node.js companion service — Baileys itself is Node-only. Only matters
   # once WHATSAPP_PROVIDER=baileys in .env; otherwise it just sits idle.
+  #
+  # No host port published on purpose: backend reaches this over the
+  # internal Docker network (http://baileys-bridge:3000, see BAILEYS_BRIDGE_URL
+  # in .env), and /send now requires the shared secret regardless — but there's
+  # no reason to also expose it to the host/LAN, where anything on the same
+  # network could otherwise reach it directly.
   baileys-bridge:
     build:
       context: ../baileys-bridge
@@ -72,8 +78,6 @@ services:
       - ../.env # picks up WHATSAPP_WEBHOOK_SECRET — must match the backend's
     depends_on:
       - backend
-    ports:
-      - "3000:3000"
     volumes:
       - baileys_auth:/app/auth_info # session credentials — survives restarts, never commit this
 
